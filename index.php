@@ -75,6 +75,25 @@
         </div>
 
         <h1>Memory Bleach</h1>
+
+        <div class="difficulty-selector">
+            <h3>Niveau de difficulté</h3>
+            <div class="difficulty-buttons">
+                <button class="difficulty-btn" data-difficulty="easy">
+                    <i class="fas fa-child"></i> Facile
+                    <span class="difficulty-info">5 secondes</span>
+                </button>
+                <button class="difficulty-btn" data-difficulty="medium">
+                    <i class="fas fa-user"></i> Moyen
+                    <span class="difficulty-info">2 secondes</span>
+                </button>
+                <button class="difficulty-btn" data-difficulty="hard">
+                    <i class="fas fa-dragon"></i> Difficile
+                    <span class="difficulty-info">0,5 seconde</span>
+                </button>
+            </div>
+        </div>
+
         <div class="game-board" id="gameBoard"></div>
     </div>
     <script src="script.js"></script>

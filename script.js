@@ -9,6 +9,19 @@ document.addEventListener("DOMContentLoaded", () => {
         { name: "zaraki", img: "image/zaraki.jpg" }
     ];
 
+    // État du jeu
+    let isLoggedIn = false;
+    let gameInitialized = false;
+    let gameLaunched = false; // Nouvel état pour savoir si le jeu a été lancé
+    let currentDifficulty = null; // Aucun niveau par défaut
+
+    // Durées de mémorisation en millisecondes pour chaque niveau de difficulté
+    const difficultySettings = {
+        easy: 5000,    // 5 secondes
+        medium: 2000,  // 2 secondes
+        hard: 500      // 0,5 seconde
+    };
+
     // Vérifier l'état de connexion au chargement
     checkLoginStatus();
 
@@ -19,6 +32,37 @@ document.addEventListener("DOMContentLoaded", () => {
     const registerModal = document.getElementById("registerModal");
     const closeButtons = document.querySelectorAll(".close-modal");
     const navbarAuth = document.querySelector(".navbar-auth");
+
+    // Gérer les changements de difficulté
+    document.addEventListener('click', function (e) {
+        if (e.target.closest('.difficulty-btn')) {
+            const difficultyBtn = e.target.closest('.difficulty-btn');
+
+            // Récupérer le niveau de difficulté
+            const difficulty = difficultyBtn.dataset.difficulty;
+
+            // Mettre à jour la difficulté actuelle
+            currentDifficulty = difficulty;
+
+            // Mettre à jour l'interface (enlever active de tous et ajouter à celui sélectionné)
+            document.querySelectorAll('.difficulty-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            difficultyBtn.classList.add('active');
+
+            // Lancer le jeu avec ce niveau de difficulté si l'utilisateur est connecté
+            if (isLoggedIn) {
+                if (!gameLaunched) {
+                    // Première fois qu'on choisit un niveau
+                    initializeGame();
+                    gameLaunched = true;
+                } else {
+                    // Changer de niveau en cours de jeu
+                    resetGame();
+                }
+            }
+        }
+    });
 
     // Ouvrir la modale de connexion
     loginBtn.addEventListener("click", () => {
@@ -198,7 +242,11 @@ document.addEventListener("DOMContentLoaded", () => {
         fetch('check_session.php')
             .then(response => response.json())
             .then(data => {
+                isLoggedIn = data.loggedin;
                 updateNavbar(data.loggedin, data.username);
+
+                // Mettre à jour l'état du jeu en fonction de la connexion
+                updateGameState(data.loggedin);
             })
             .catch(error => {
                 console.error('Erreur:', error);
@@ -256,6 +304,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.status === 'success') {
                     showNotification(data.message, 'success');
 
+                    // Réinitialiser l'état du jeu
+                    gameLaunched = false;
+
                     // Mettre à jour l'interface pour l'utilisateur déconnecté
                     setTimeout(() => {
                         checkLoginStatus();
@@ -266,6 +317,81 @@ document.addEventListener("DOMContentLoaded", () => {
                 console.error('Erreur:', error);
                 showNotification('Une erreur est survenue lors de la déconnexion.', 'error');
             });
+    }
+
+    // Fonction pour mettre à jour l'état du jeu en fonction de l'authentification
+    function updateGameState(isUserLoggedIn) {
+        // Récupérer le sélecteur de difficulté
+        const difficultySelector = document.querySelector('.difficulty-selector');
+
+        if (isUserLoggedIn) {
+            // L'utilisateur est connecté
+            gameBoard.classList.remove('disabled-game');
+            if (document.getElementById('login-required-overlay')) {
+                document.getElementById('login-required-overlay').remove();
+            }
+
+            // Afficher le sélecteur de difficulté
+            if (difficultySelector) {
+                difficultySelector.style.display = 'block';
+            }
+
+            // Si le jeu n'est pas lancé, afficher un message pour choisir la difficulté
+            if (!gameLaunched) {
+                gameBoard.innerHTML = '';
+                const chooseDiffMessage = document.createElement('div');
+                chooseDiffMessage.className = 'choose-difficulty-message';
+                chooseDiffMessage.innerHTML = `
+                    <i class="fas fa-gamepad fa-3x"></i>
+                    <h3>Choisissez un niveau de difficulté</h3>
+                    <p>Cliquez sur un des boutons ci-dessus pour commencer à jouer.</p>
+                `;
+                gameBoard.appendChild(chooseDiffMessage);
+            }
+        } else {
+            // L'utilisateur n'est pas connecté, désactiver le jeu
+            gameBoard.innerHTML = '';
+            gameBoard.classList.add('disabled-game');
+
+            // Masquer le sélecteur de difficulté
+            if (difficultySelector) {
+                difficultySelector.style.display = 'none';
+            }
+
+            // Créer l'overlay avec message demandant la connexion
+            if (!document.getElementById('login-required-overlay')) {
+                const overlay = document.createElement('div');
+                overlay.id = 'login-required-overlay';
+                overlay.className = 'login-required-overlay';
+
+                const message = document.createElement('div');
+                message.className = 'login-message';
+                message.innerHTML = `
+                    <i class="fas fa-lock fa-3x"></i>
+                    <h3>Connexion requise</h3>
+                    <p>Veuillez vous connecter ou vous inscrire pour jouer au Memory Bleach.</p>
+                    <div class="overlay-buttons">
+                        <button class="overlay-btn login-overlay-btn">Se connecter</button>
+                        <button class="overlay-btn register-overlay-btn">S'inscrire</button>
+                    </div>
+                `;
+
+                overlay.appendChild(message);
+                gameBoard.appendChild(overlay);
+
+                // Ajouter les événements aux boutons de l'overlay
+                document.querySelector('.login-overlay-btn').addEventListener('click', () => {
+                    loginModal.style.display = 'block';
+                });
+
+                document.querySelector('.register-overlay-btn').addEventListener('click', () => {
+                    registerModal.style.display = 'block';
+                });
+            }
+
+            gameInitialized = false;
+            gameLaunched = false; // Réinitialiser l'état du lancement
+        }
     }
 
     // Fonction pour afficher des notifications
@@ -291,143 +417,230 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 3000);
     }
 
-    // Créer des paires et mélanger
-    let cards = [...characters, ...characters];
-    let flippedCards = [];
-    let matchedPairs = 0;
-    let canFlip = true; // Verrou pour éviter les clics trop rapides
+    // Initialiser le jeu complet
+    function initializeGame() {
+        // Créer des paires et mélanger
+        let cards = [...characters, ...characters];
+        let flippedCards = [];
+        let matchedPairs = 0;
+        let canFlip = false; // Désactiver les clics jusqu'à la fin de la phase de mémorisation
 
-    // Fonction pour mélanger
-    function shuffleArray(array) {
-        return array.sort(() => Math.random() - 0.5);
-    }
-
-    // Créer le plateau de jeu
-    function createBoard() {
-        gameBoard.innerHTML = ""; // Nettoyer le plateau
-        shuffleArray(cards).forEach((character) => {
-            const card = document.createElement("div");
-            card.className = "card";
-            card.dataset.name = character.name;
-
-            const img = document.createElement("img");
-            img.src = character.img;
-            img.alt = character.name;
-
-            // S'assurer que l'image est chargée correctement
-            img.onload = () => {
-                img.style.visibility = "visible";
-            };
-            img.style.visibility = "hidden"; // Cacher l'image jusqu'à ce qu'elle soit chargée
-
-            card.appendChild(img);
-            card.addEventListener("click", flipCard);
-            gameBoard.appendChild(card);
-
-            // Animation d'entrée légère
-            setTimeout(() => {
-                card.style.opacity = "1";
-                card.style.transform = "translateY(0)";
-            }, Math.random() * 500);
-        });
-    }
-
-    // Retourner une carte
-    function flipCard() {
-        // Empêcher de cliquer sur une carte déjà retournée ou trouvée
-        if (!canFlip || flippedCards.length >= 2 || this.classList.contains("flipped") || this.classList.contains("matched")) {
-            return;
+        // Fonction pour mélanger
+        function shuffleArray(array) {
+            return array.sort(() => Math.random() - 0.5);
         }
 
-        this.classList.add("flipped");
-        flippedCards.push(this);
+        // Créer le plateau de jeu
+        function createBoard() {
+            gameBoard.innerHTML = ""; // Nettoyer le plateau
 
-        if (flippedCards.length === 2) {
-            canFlip = false; // Verrou pendant la vérification
-            setTimeout(checkForMatch, 800);
-        }
-    }
+            // Mélanger les cartes
+            const shuffledCards = shuffleArray([...cards]);
 
-    // Vérifier les paires
-    function checkForMatch() {
-        const [card1, card2] = flippedCards;
+            // Créer les éléments de carte
+            shuffledCards.forEach((character) => {
+                const card = document.createElement("div");
+                card.className = "card";
+                card.dataset.name = character.name;
 
-        if (card1.dataset.name === card2.dataset.name) {
-            // Match trouvé
-            card1.classList.add("matched");
-            card2.classList.add("matched");
-            matchedPairs++;
+                const img = document.createElement("img");
+                img.src = character.img;
+                img.alt = character.name;
 
-            if (matchedPairs === characters.length) {
-                // Victoire !
-                setTimeout(celebrateVictory, 500);
-            }
-        } else {
-            // Pas de match
-            setTimeout(() => {
-                card1.classList.remove("flipped");
-                card2.classList.remove("flipped");
-            }, 400);
-        }
+                // S'assurer que l'image est chargée correctement
+                img.onload = () => {
+                    img.style.visibility = "visible";
+                };
+                img.style.visibility = "hidden"; // Cacher l'image jusqu'à ce qu'elle soit chargée
 
-        flippedCards = [];
-        setTimeout(() => { canFlip = true; }, 400); // Réactiver les clics après l'animation
-    }
+                card.appendChild(img);
+                card.addEventListener("click", flipCard);
+                gameBoard.appendChild(card);
 
-    // Célébration de la victoire
-    function celebrateVictory() {
-        // Ajouter classe de victoire au plateau
-        gameBoard.classList.add("victory");
-
-        // Animation sur toutes les cartes
-        document.querySelectorAll('.card').forEach((card, index) => {
-            setTimeout(() => {
-                card.style.animation = "victoryPulse 2s infinite " + (index * 0.1) + "s";
-            }, index * 150);
-        });
-
-        // Message de victoire stylisé
-        setTimeout(() => {
-            const victoryMsg = document.createElement("div");
-            victoryMsg.className = "victory-message";
-            victoryMsg.innerHTML = "<h2>Bankai ! Tu as gagné ! 🏆</h2>";
-
-            // Bouton pour rejouer
-            const replayBtn = document.createElement("button");
-            replayBtn.textContent = "Rejouer";
-
-            replayBtn.addEventListener("click", () => {
-                victoryMsg.remove();
-                resetGame();
+                // Animation d'entrée légère
+                setTimeout(() => {
+                    card.style.opacity = "1";
+                    card.style.transform = "translateY(0)";
+                }, Math.random() * 500);
             });
 
-            victoryMsg.appendChild(replayBtn);
-            document.querySelector('.content-wrapper').appendChild(victoryMsg);
-
-            // Effet spécial de victoire sur l'arrière-plan
-            document.body.classList.add('victory-bg');
+            // Montrer les cartes pendant un moment pour mémorisation
             setTimeout(() => {
-                document.body.classList.remove('victory-bg');
-            }, 5000);
+                // Obtenir le temps de mémorisation basé sur la difficulté actuelle
+                const memorizationTime = difficultySettings[currentDifficulty];
 
-            // Si l'utilisateur est connecté, enregistrer le score
-            fetch('check_session.php')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.loggedin) {
-                        // Enregistrer le score (à implémenter)
-                        showNotification('Score enregistré !', 'success');
-                    }
+                // Calculer les secondes pour l'affichage du décompte
+                const secondsToShow = Math.ceil(memorizationTime / 1000);
+
+                // Ajouter un overlay avec un décompte
+                const overlay = document.createElement('div');
+                overlay.className = 'memorize-overlay';
+
+                const countdown = document.createElement('div');
+                countdown.className = 'countdown';
+                countdown.textContent = secondsToShow.toString();
+
+                overlay.appendChild(countdown);
+                document.body.appendChild(overlay);
+
+                // Montrer toutes les cartes
+                document.querySelectorAll('.card').forEach(card => {
+                    card.classList.add('flipped');
                 });
-        }, 1000);
-    }
 
-    // Réinitialiser le jeu
-    function resetGame() {
-        matchedPairs = 0;
-        flippedCards = [];
-        gameBoard.classList.remove("victory");
+                // Décompte
+                let count = secondsToShow;
+                let stepTime = 1000; // 1 seconde par défaut
+
+                // Ajuster l'intervalle pour le niveau difficile
+                if (currentDifficulty === 'hard') {
+                    stepTime = 500; // 0,5 seconde pour le niveau difficile
+                }
+
+                const countdownInterval = setInterval(() => {
+                    count--;
+                    if (count <= 0) {
+                        countdown.textContent = "0";
+                    } else {
+                        countdown.textContent = count.toString();
+                    }
+
+                    // Animation de pulse sur le décompte
+                    countdown.classList.add('pulse');
+                    setTimeout(() => countdown.classList.remove('pulse'), 300);
+
+                    if (count <= 0) {
+                        clearInterval(countdownInterval);
+
+                        // Retourner toutes les cartes
+                        document.querySelectorAll('.card').forEach(card => {
+                            card.classList.remove('flipped');
+                        });
+
+                        // Retirer l'overlay
+                        document.body.removeChild(overlay);
+
+                        // Activer le jeu
+                        canFlip = true;
+                    }
+                }, stepTime);
+            },); // Attendre 1 seconde avant de montrer les cartes
+        }
+
+        // Retourner une carte
+        function flipCard() {
+            // Empêcher de cliquer sur une carte déjà retournée ou trouvée
+            if (!canFlip || flippedCards.length >= 2 || this.classList.contains("flipped") || this.classList.contains("matched")) {
+                return;
+            }
+
+            this.classList.add("flipped");
+            flippedCards.push(this);
+
+            if (flippedCards.length === 2) {
+                canFlip = false; // Verrou pendant la vérification
+                setTimeout(checkForMatch, 800);
+            }
+        }
+
+        // Vérifier les paires
+        function checkForMatch() {
+            const [card1, card2] = flippedCards;
+
+            if (card1.dataset.name === card2.dataset.name) {
+                // Match trouvé
+                card1.classList.add("matched");
+                card2.classList.add("matched");
+                matchedPairs++;
+
+                if (matchedPairs === characters.length) {
+                    // Victoire !
+                    setTimeout(celebrateVictory, 500);
+                }
+            } else {
+                // Pas de match
+                setTimeout(() => {
+                    card1.classList.remove("flipped");
+                    card2.classList.remove("flipped");
+                }, 400);
+            }
+
+            flippedCards = [];
+            setTimeout(() => { canFlip = true; }, 400); // Réactiver les clics après l'animation
+        }
+
+        // Célébration de la victoire
+        function celebrateVictory() {
+            // Ajouter classe de victoire au plateau
+            gameBoard.classList.add("victory");
+
+            // Animation sur toutes les cartes
+            document.querySelectorAll('.card').forEach((card, index) => {
+                setTimeout(() => {
+                    card.style.animation = "victoryPulse 2s infinite " + (index * 0.1) + "s";
+                }, index * 150);
+            });
+
+            // Message de victoire stylisé
+            setTimeout(() => {
+                const victoryMsg = document.createElement("div");
+                victoryMsg.className = "victory-message";
+                victoryMsg.innerHTML = "<h2>Bankai ! Tu as gagné ! 🏆</h2>";
+
+                // Bouton pour rejouer
+                const replayBtn = document.createElement("button");
+                replayBtn.textContent = "Rejouer";
+
+                replayBtn.addEventListener("click", () => {
+                    victoryMsg.remove();
+                    resetGame();
+                });
+
+                victoryMsg.appendChild(replayBtn);
+                document.querySelector('.content-wrapper').appendChild(victoryMsg);
+
+                // Effet spécial de victoire sur l'arrière-plan
+                document.body.classList.add('victory-bg');
+                setTimeout(() => {
+                    document.body.classList.remove('victory-bg');
+                }, 5000);
+
+                // Si l'utilisateur est connecté, enregistrer le score
+                fetch('save_score.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        score: matchedPairs * 100, // Score basé sur le nombre de paires trouvées
+                        time: 0 // À implémenter: temps mis pour terminer
+                    })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            showNotification(data.message, 'success');
+                        } else {
+                            console.error('Erreur lors de l\'enregistrement du score:', data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Erreur:', error);
+                    });
+            }, 1000);
+        }
+
+        // Réinitialiser le jeu
+        function resetGame() {
+            matchedPairs = 0;
+            flippedCards = [];
+            gameBoard.classList.remove("victory");
+            createBoard();
+        }
+
+        // Démarrer le jeu
         createBoard();
+        gameInitialized = true;
     }
 
     // Ajouter des styles dynamiques
@@ -482,6 +695,81 @@ document.addEventListener("DOMContentLoaded", () => {
             background: rgba(255, 82, 82, 0.4);
             box-shadow: 0 0 10px rgba(255, 82, 82, 0.4);
         }
+        .disabled-game {
+            position: relative;
+            min-height: 300px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+        .login-required-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(5px);
+            border-radius: 10px;
+        }
+        .login-message {
+            text-align: center;
+            padding: 30px;
+            color: white;
+        }
+        .login-message h3 {
+            color: #e0a800;
+            margin: 15px 0;
+            font-size: 24px;
+        }
+        .login-message p {
+            margin-bottom: 20px;
+            display: flex;
+
+        }
+        .login-message .fas {
+            color: #e0a800;
+            margin-bottom: 15px;
+        }
+        .overlay-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .overlay-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .login-overlay-btn {
+            background: #e0a800;
+            color: #000;
+        }
+        .register-overlay-btn {
+            background: transparent;
+            color: #fff;
+            border: 1px solid #e0a800;
+        }
+        .overlay-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+        .login-overlay-btn:hover {
+            background: #f1b800;
+        }
+        .register-overlay-btn:hover {
+            background: rgba(224, 168, 0, 0.2);
+        }
     `;
     document.head.appendChild(style);
 
@@ -493,6 +781,5 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     preloadImages();
 
-    // Démarrer le jeu
-    createBoard();
+    // L'initialisation du jeu est maintenant conditionnelle et contrôlée par updateGameState
 });
